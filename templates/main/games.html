@@ -1,0 +1,774 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mini Games | Your Name</title>
+    <link rel="stylesheet" href="{% static 'css/main/game.css' %}" />
+</head>
+<body>
+    <div class="games-container">
+        <header class="games-header">
+            <h1>Mini Games</h1>
+            <p>Simple games built with vanilla JavaScript</p>
+        </header>
+
+        <div class="games-grid" id="gamesGrid">
+            <!-- Game cards will be inserted here by JS -->
+        </div>
+
+        <div class="game-view" id="gameView">
+            <div class="game-header">
+                <h2 id="gameTitle">Game Title</h2>
+                <button id="closeGame" class="btn-close">×</button>
+            </div>
+            <canvas id="gameCanvas"></canvas>
+            <div class="game-controls">
+                <button id="restartGame" class="btn-secondary">Restart</button>
+                <div class="game-stats" id="gameStats"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+
+document.addEventListener('DOMContentLoaded', () => {
+    // DOM Elements
+    const gamesGrid = document.getElementById('gamesGrid');
+    const gameView = document.getElementById('gameView');
+    const gameCanvas = document.getElementById('gameCanvas');
+    const gameTitle = document.getElementById('gameTitle');
+    const closeGame = document.getElementById('closeGame');
+    const restartGame = document.getElementById('restartGame');
+    const gameStats = document.getElementById('gameStats');
+    const ctx = gameCanvas.getContext('2d');
+
+    // Game Data
+    const games = [
+        {
+            id: 'tictactoe',
+            title: 'Tic Tac Toe',
+            description: 'Classic 3x3 grid game. Play against the computer.',
+            icon: '⭕❌'
+        },
+        {
+            id: 'pong',
+            title: 'Pong',
+            description: 'The arcade classic. Use arrow keys to move your paddle.',
+            icon: '🏓'
+        },
+        {
+            id: 'snake',
+            title: 'Snake',
+            description: 'Guide the snake to eat food and grow longer.',
+            icon: '🐍'
+        }
+    ];
+
+    // Current game state
+    let currentGame = null;
+    let gameInterval = null;
+
+    // Initialize the games grid
+    function initializeGamesGrid() {
+        games.forEach(game => {
+            const card = document.createElement('div');
+            card.className = 'game-card';
+            card.innerHTML = `
+                <div class="icon">${game.icon}</div>
+                <h3>${game.title}</h3>
+                <p>${game.description}</p>
+            `;
+            card.addEventListener('click', () => openGame(game));
+            gamesGrid.appendChild(card);
+        });
+    }
+
+    // Open game function
+    function openGame(game) {
+        currentGame = game;
+        gameTitle.textContent = game.title;
+        gameView.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+        
+        resizeCanvas();
+        
+        switch(game.id) {
+            case 'tictactoe':
+                initTicTacToe();
+                break;
+            case 'pong':
+                initPong();
+                break;
+            case 'snake':
+                initSnake();
+                break;
+        }
+    }
+
+    // Close game function
+    function closeCurrentGame() {
+        if (gameInterval) {
+            clearInterval(gameInterval);
+            gameInterval = null;
+        }
+        
+        // Remove event listeners
+        gameCanvas.removeEventListener('click', handleTicTacToeClick);
+        document.removeEventListener('keydown', handlePongKeyPress);
+        document.removeEventListener('keydown', handleSnakeKeyPress);
+        
+        gameView.style.display = 'none';
+        document.body.style.overflow = 'auto';
+        currentGame = null;
+    }
+
+    // Handle window resize
+    function resizeCanvas() {
+        const maxWidth = window.innerWidth - 40;
+        const maxHeight = window.innerHeight - 180;
+        
+        gameCanvas.width = Math.min(maxWidth, maxHeight * (4/3));
+        gameCanvas.height = gameCanvas.width * (3/4);
+        
+        if (currentGame) {
+            switch(currentGame.id) {
+                case 'tictactoe':
+                    drawTicTacToe();
+                    break;
+                case 'pong':
+                    drawPong();
+                    break;
+                case 'snake':
+                    drawSnake();
+                    break;
+            }
+        }
+    }
+
+    // ======================
+// TIC TAC TOE IMPLEMENTATION (FIXED)
+// ======================
+let ticTacToeState = {
+    board: Array(9).fill(null),
+    currentPlayer: 'X',
+    gameOver: false,
+    winner: null,
+    scores: { X: 0, O: 0, ties: 0 }
+};
+
+function initTicTacToe() {
+    ticTacToeState = {
+        board: Array(9).fill(null),
+        currentPlayer: 'X',
+        gameOver: false,
+        winner: null,
+        scores: { ...ticTacToeState.scores }
+    };
+    
+    // Ensure canvas is properly sized before drawing
+    resizeCanvas();
+    updateTicTacToeStats();
+    drawTicTacToe();
+    setupTicTacToeListeners();
+}
+
+function drawTicTacToe() {
+    // Clear canvas with your grey color
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--grey');
+    ctx.fillRect(0, 0, gameCanvas.width, gameCanvas.height);
+    
+    // Calculate cell size with padding
+    const padding = 20; // Add some padding
+    const boardSize = Math.min(gameCanvas.width, gameCanvas.height) - padding * 2;
+    const cellSize = boardSize / 3;
+    
+    // Calculate board position to center it
+    const boardX = (gameCanvas.width - boardSize) / 2;
+    const boardY = (gameCanvas.height - boardSize) / 2;
+    
+    // Draw grid with your yellow color
+    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--yellow');
+    ctx.lineWidth = 4;
+    
+    for (let i = 1; i < 3; i++) {
+        // Vertical lines
+        ctx.beginPath();
+        ctx.moveTo(boardX + i * cellSize, boardY);
+        ctx.lineTo(boardX + i * cellSize, boardY + boardSize);
+        ctx.stroke();
+        
+        // Horizontal lines
+        ctx.beginPath();
+        ctx.moveTo(boardX, boardY + i * cellSize);
+        ctx.lineTo(boardX + boardSize, boardY + i * cellSize);
+        ctx.stroke();
+    }
+    
+    // Draw X's and O's
+    ctx.font = `${cellSize * 0.6}px Montserrat`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    
+    ticTacToeState.board.forEach((cell, index) => {
+        if (cell) {
+            const row = Math.floor(index / 3);
+            const col = index % 3;
+            const x = boardX + col * cellSize + cellSize / 2;
+            const y = boardY + row * cellSize + cellSize / 2;
+            
+            ctx.fillStyle = cell === 'X' 
+                ? getComputedStyle(document.documentElement).getPropertyValue('--yellow')
+                : getComputedStyle(document.documentElement).getPropertyValue('--white');
+            
+            ctx.fillText(cell, x, y);
+        }
+    });
+    
+    // Draw winning line if game is over
+    if (ticTacToeState.gameOver && ticTacToeState.winner !== 'tie') {
+        drawWinningLine(boardX, boardY, cellSize);
+    }
+}
+
+function drawWinningLine(boardX, boardY, cellSize) {
+    const winPatterns = [
+        [0, 1, 2], [3, 4, 5], [6, 7, 8], // rows
+        [0, 3, 6], [1, 4, 7], [2, 5, 8], // columns
+        [0, 4, 8], [2, 4, 6]             // diagonals
+    ];
+    
+    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--yellow');
+    ctx.lineWidth = 6;
+    
+    for (const pattern of winPatterns) {
+        if (pattern.every(index => ticTacToeState.board[index] === ticTacToeState.winner)) {
+            const [start, , end] = pattern;
+            const startRow = Math.floor(start / 3);
+            const startCol = start % 3;
+            const endRow = Math.floor(end / 3);
+            const endCol = end % 3;
+            
+            ctx.beginPath();
+            ctx.moveTo(
+                boardX + startCol * cellSize + cellSize / 2,
+                boardY + startRow * cellSize + cellSize / 2
+            );
+            ctx.lineTo(
+                boardX + endCol * cellSize + cellSize / 2,
+                boardY + endRow * cellSize + cellSize / 2
+            );
+            ctx.stroke();
+            break;
+        }
+    }
+}
+
+function handleTicTacToeClick(e) {
+    if (ticTacToeState.gameOver) return;
+    
+    const rect = gameCanvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    
+    // Calculate board position and cell size (same as in draw function)
+    const padding = 20;
+    const boardSize = Math.min(gameCanvas.width, gameCanvas.height) - padding * 2;
+    const cellSize = boardSize / 3;
+    const boardX = (gameCanvas.width - boardSize) / 2;
+    const boardY = (gameCanvas.height - boardSize) / 2;
+    
+    // Check if click is inside the board
+    if (x < boardX || x > boardX + boardSize || 
+        y < boardY || y > boardY + boardSize) {
+        return;
+    }
+    
+    // Calculate which cell was clicked
+    const col = Math.floor((x - boardX) / cellSize);
+    const row = Math.floor((y - boardY) / cellSize);
+    const index = row * 3 + col;
+    
+    if (ticTacToeState.board[index] === null) {
+        makeMove(index, ticTacToeState.currentPlayer);
+        
+        if (!ticTacToeState.gameOver) {
+            setTimeout(() => {
+                const bestMove = findBestMove();
+                makeMove(bestMove, 'O');
+            }, 500);
+        }
+    }
+}
+    // ======================
+    // PONG IMPLEMENTATION
+    // ======================
+    let pongState = {
+        ball: { x: 0, y: 0, radius: 10, dx: 4, dy: 4 },
+        playerPaddle: { x: 0, y: 0, width: 15, height: 80, dy: 0 },
+        computerPaddle: { x: 0, y: 0, width: 15, height: 80 },
+        playerScore: 0,
+        computerScore: 0,
+        gameRunning: false
+    };
+
+    function initPong() {
+        resetPongGame();
+        updatePongStats();
+        drawPong();
+        setupPongListeners();
+        
+        if (gameInterval) clearInterval(gameInterval);
+        gameInterval = setInterval(updatePong, 1000 / 60);
+    }
+
+    function setupPongListeners() {
+        document.removeEventListener('keydown', handlePongKeyPress);
+        document.removeEventListener('keyup', handlePongKeyUp);
+        document.addEventListener('keydown', handlePongKeyPress);
+        document.addEventListener('keyup', handlePongKeyUp);
+    }
+
+    function handlePongKeyPress(e) {
+        if (e.key === 'ArrowUp') {
+            pongState.playerPaddle.dy = -6;
+        } else if (e.key === 'ArrowDown') {
+            pongState.playerPaddle.dy = 6;
+        } else if (e.key === ' ' && !pongState.gameRunning) {
+            pongState.gameRunning = true;
+        }
+    }
+
+    function handlePongKeyUp(e) {
+        if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+            pongState.playerPaddle.dy = 0;
+        }
+    }
+
+    function resetPongGame() {
+        pongState.ball.x = gameCanvas.width / 2;
+        pongState.ball.y = gameCanvas.height / 2;
+        pongState.ball.dx = 4 * (Math.random() > 0.5 ? 1 : -1);
+        pongState.ball.dy = 4 * (Math.random() > 0.5 ? 1 : -1);
+        
+        pongState.playerPaddle.x = 20;
+        pongState.playerPaddle.y = gameCanvas.height / 2 - pongState.playerPaddle.height / 2;
+        
+        pongState.computerPaddle.x = gameCanvas.width - 20 - pongState.computerPaddle.width;
+        pongState.computerPaddle.y = gameCanvas.height / 2 - pongState.computerPaddle.height / 2;
+        
+        pongState.gameRunning = false;
+    }
+
+    function updatePong() {
+        if (!pongState.gameRunning) return;
+        
+        // Move ball
+        pongState.ball.x += pongState.ball.dx;
+        pongState.ball.y += pongState.ball.dy;
+        
+        // Move player paddle
+        pongState.playerPaddle.y += pongState.playerPaddle.dy;
+        
+        // Keep player paddle in bounds
+        if (pongState.playerPaddle.y < 0) pongState.playerPaddle.y = 0;
+        if (pongState.playerPaddle.y + pongState.playerPaddle.height > gameCanvas.height) {
+            pongState.playerPaddle.y = gameCanvas.height - pongState.playerPaddle.height;
+        }
+        
+        // Simple computer AI
+        const computerPaddleCenter = pongState.computerPaddle.y + pongState.computerPaddle.height / 2;
+        const ballCenter = pongState.ball.y;
+        
+        if (computerPaddleCenter < ballCenter - 10) {
+            pongState.computerPaddle.y += 4;
+        } else if (computerPaddleCenter > ballCenter + 10) {
+            pongState.computerPaddle.y -= 4;
+        }
+        
+        // Keep computer paddle in bounds
+        if (pongState.computerPaddle.y < 0) pongState.computerPaddle.y = 0;
+        if (pongState.computerPaddle.y + pongState.computerPaddle.height > gameCanvas.height) {
+            pongState.computerPaddle.y = gameCanvas.height - pongState.computerPaddle.height;
+        }
+        
+        // Ball collision with top and bottom
+        if (pongState.ball.y - pongState.ball.radius < 0 || 
+            pongState.ball.y + pongState.ball.radius > gameCanvas.height) {
+            pongState.ball.dy = -pongState.ball.dy;
+        }
+        
+        // Ball collision with paddles
+        if (pongState.ball.x - pongState.ball.radius < pongState.playerPaddle.x + pongState.playerPaddle.width &&
+            pongState.ball.y > pongState.playerPaddle.y && 
+            pongState.ball.y < pongState.playerPaddle.y + pongState.playerPaddle.height) {
+            pongState.ball.dx = -pongState.ball.dx * 1.05;
+            
+            // Add some angle based on where ball hits paddle
+            const hitPosition = (pongState.ball.y - (pongState.playerPaddle.y + pongState.playerPaddle.height / 2)) / (pongState.playerPaddle.height / 2);
+            pongState.ball.dy = hitPosition * 5;
+        }
+        
+        if (pongState.ball.x + pongState.ball.radius > pongState.computerPaddle.x &&
+            pongState.ball.y > pongState.computerPaddle.y && 
+            pongState.ball.y < pongState.computerPaddle.y + pongState.computerPaddle.height) {
+            pongState.ball.dx = -pongState.ball.dx * 1.05;
+            
+            // Add some angle based on where ball hits paddle
+            const hitPosition = (pongState.ball.y - (pongState.computerPaddle.y + pongState.computerPaddle.height / 2)) / (pongState.computerPaddle.height / 2);
+            pongState.ball.dy = hitPosition * 5;
+        }
+        
+        // Score points
+        if (pongState.ball.x - pongState.ball.radius < 0) {
+            pongState.computerScore++;
+            updatePongStats();
+            resetPongGame();
+        }
+        
+        if (pongState.ball.x + pongState.ball.radius > gameCanvas.width) {
+            pongState.playerScore++;
+            updatePongStats();
+            resetPongGame();
+        }
+        
+        drawPong();
+    }
+
+    function updatePongStats() {
+        gameStats.textContent = `Player: ${pongState.playerScore} | Computer: ${pongState.computerScore}`;
+    }
+
+    function drawPong() {
+        // Clear canvas
+        ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--grey');
+        ctx.fillRect(0, 0, gameCanvas.width, gameCanvas.height);
+        
+        // Draw center line
+        ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--light');
+        ctx.setLineDash([10, 10]);
+        ctx.beginPath();
+        ctx.moveTo(gameCanvas.width / 2, 0);
+        ctx.lineTo(gameCanvas.width / 2, gameCanvas.height);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        
+        // Draw paddles
+        ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--white');
+        ctx.fillRect(
+            pongState.playerPaddle.x,
+            pongState.playerPaddle.y,
+            pongState.playerPaddle.width,
+            pongState.playerPaddle.height
+        );
+        
+        ctx.fillRect(
+            pongState.computerPaddle.x,
+            pongState.computerPaddle.y,
+            pongState.computerPaddle.width,
+            pongState.computerPaddle.height
+        );
+        
+        // Draw ball
+        ctx.beginPath();
+        ctx.arc(pongState.ball.x, pongState.ball.y, pongState.ball.radius, 0, Math.PI * 2);
+        ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--yellow');
+        ctx.fill();
+        
+        // Draw start message if game isn't running
+        if (!pongState.gameRunning) {
+            ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--white');
+            ctx.font = '24px Montserrat';
+            ctx.textAlign = 'center';
+            ctx.fillText('Press SPACE to start', gameCanvas.width / 2, gameCanvas.height / 2);
+        }
+    }
+
+    // ======================
+    // SNAKE IMPLEMENTATION
+    // ======================
+    let snakeState = {
+        snake: [],
+        food: {},
+        dx: 20,
+        dy: 0,
+        cellSize: 20,
+        score: 0,
+        gameRunning: false,
+        directionQueue: []
+    };
+
+    function initSnake() {
+        resetSnakeGame();
+        updateSnakeStats();
+        drawSnake();
+        setupSnakeListeners();
+        
+        if (gameInterval) clearInterval(gameInterval);
+        gameInterval = setInterval(updateSnake, 100);
+    }
+
+    function setupSnakeListeners() {
+        document.removeEventListener('keydown', handleSnakeKeyPress);
+        document.addEventListener('keydown', handleSnakeKeyPress);
+    }
+
+    function handleSnakeKeyPress(e) {
+        if (!snakeState.gameRunning && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+            snakeState.gameRunning = true;
+        }
+        
+        // Prevent reversing direction
+        if (e.key === 'ArrowUp' && snakeState.dy === 0) {
+            snakeState.directionQueue.push({ dx: 0, dy: -snakeState.cellSize });
+        } else if (e.key === 'ArrowDown' && snakeState.dy === 0) {
+            snakeState.directionQueue.push({ dx: 0, dy: snakeState.cellSize });
+        } else if (e.key === 'ArrowLeft' && snakeState.dx === 0) {
+            snakeState.directionQueue.push({ dx: -snakeState.cellSize, dy: 0 });
+        } else if (e.key === 'ArrowRight' && snakeState.dx === 0) {
+            snakeState.directionQueue.push({ dx: snakeState.cellSize, dy: 0 });
+        }
+    }
+
+    function resetSnakeGame() {
+        const startX = Math.floor(gameCanvas.width / 2 / snakeState.cellSize) * snakeState.cellSize;
+        const startY = Math.floor(gameCanvas.height / 2 / snakeState.cellSize) * snakeState.cellSize;
+        
+        snakeState.snake = [
+            { x: startX, y: startY },
+            { x: startX - snakeState.cellSize, y: startY },
+            { x: startX - snakeState.cellSize * 2, y: startY }
+        ];
+        
+        snakeState.dx = snakeState.cellSize;
+        snakeState.dy = 0;
+        snakeState.score = 0;
+        snakeState.gameRunning = false;
+        snakeState.directionQueue = [];
+        
+        generateFood();
+    }
+
+    function generateFood() {
+        const cols = Math.floor(gameCanvas.width / snakeState.cellSize);
+        const rows = Math.floor(gameCanvas.height / snakeState.cellSize);
+        
+        let foodX, foodY;
+        let validPosition = false;
+        
+        while (!validPosition) {
+            foodX = Math.floor(Math.random() * cols) * snakeState.cellSize;
+            foodY = Math.floor(Math.random() * rows) * snakeState.cellSize;
+            
+            validPosition = !snakeState.snake.some(segment => 
+                segment.x === foodX && segment.y === foodY
+            );
+        }
+        
+        snakeState.food = { x: foodX, y: foodY };
+    }
+
+    function updateSnake() {
+        if (!snakeState.gameRunning) return;
+        
+        // Process direction changes from queue
+        if (snakeState.directionQueue.length > 0) {
+            const newDirection = snakeState.directionQueue.shift();
+            snakeState.dx = newDirection.dx;
+            snakeState.dy = newDirection.dy;
+        }
+        
+        // Calculate new head position
+        const head = { 
+            x: snakeState.snake[0].x + snakeState.dx,
+            y: snakeState.snake[0].y + snakeState.dy
+        };
+        
+        // Check for collisions with walls
+        if (head.x < 0 || head.x >= gameCanvas.width || 
+            head.y < 0 || head.y >= gameCanvas.height) {
+            resetSnakeGame();
+            updateSnakeStats();
+            return;
+        }
+        
+        // Check for collisions with self
+        if (snakeState.snake.some(segment => segment.x === head.x && segment.y === head.y)) {
+            resetSnakeGame();
+            updateSnakeStats();
+            return;
+        }
+        
+        // Add new head
+        snakeState.snake.unshift(head);
+        
+        // Check if snake ate food
+        if (head.x === snakeState.food.x && head.y === snakeState.food.y) {
+            snakeState.score++;
+            updateSnakeStats();
+            generateFood();
+        } else {
+            // Remove tail if no food was eaten
+            snakeState.snake.pop();
+        }
+        
+        drawSnake();
+    }
+
+    function updateSnakeStats() {
+        gameStats.textContent = `Score: ${snakeState.score}`;
+    }
+
+    function drawSnake() {
+        // Clear canvas
+        ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--grey');
+        ctx.fillRect(0, 0, gameCanvas.width, gameCanvas.height);
+        
+        // Draw grid (optional)
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+        ctx.lineWidth = 1;
+        
+        const cols = Math.floor(gameCanvas.width / snakeState.cellSize);
+        const rows = Math.floor(gameCanvas.height / snakeState.cellSize);
+        
+        for (let i = 0; i < cols; i++) {
+            ctx.beginPath();
+            ctx.moveTo(i * snakeState.cellSize, 0);
+            ctx.lineTo(i * snakeState.cellSize, gameCanvas.height);
+            ctx.stroke();
+        }
+        
+        for (let i = 0; i < rows; i++) {
+            ctx.beginPath();
+            ctx.moveTo(0, i * snakeState.cellSize);
+            ctx.lineTo(gameCanvas.width, i * snakeState.cellSize);
+            ctx.stroke();
+        }
+        
+        // Draw snake
+        snakeState.snake.forEach((segment, index) => {
+            ctx.fillStyle = index === 0 
+                ? getComputedStyle(document.documentElement).getPropertyValue('--yellow')
+                : getComputedStyle(document.documentElement).getPropertyValue('--white');
+            
+            ctx.fillRect(
+                segment.x,
+                segment.y,
+                snakeState.cellSize,
+                snakeState.cellSize
+            );
+            
+            // Add some detail to the head
+            if (index === 0) {
+                ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--dark');
+                const eyeSize = snakeState.cellSize / 5;
+                const eyeOffset = snakeState.cellSize / 4;
+                
+                // Eyes (position based on direction)
+                if (snakeState.dx > 0) { // Right
+                    ctx.fillRect(
+                        segment.x + snakeState.cellSize - eyeOffset - eyeSize,
+                        segment.y + eyeOffset,
+                        eyeSize,
+                        eyeSize
+                    );
+                    ctx.fillRect(
+                        segment.x + snakeState.cellSize - eyeOffset - eyeSize,
+                        segment.y + snakeState.cellSize - eyeOffset - eyeSize,
+                        eyeSize,
+                        eyeSize
+                    );
+                } else if (snakeState.dx < 0) { // Left
+                    ctx.fillRect(
+                        segment.x + eyeOffset,
+                        segment.y + eyeOffset,
+                        eyeSize,
+                        eyeSize
+                    );
+                    ctx.fillRect(
+                        segment.x + eyeOffset,
+                        segment.y + snakeState.cellSize - eyeOffset - eyeSize,
+                        eyeSize,
+                        eyeSize
+                    );
+                } else if (snakeState.dy > 0) { // Down
+                    ctx.fillRect(
+                        segment.x + eyeOffset,
+                        segment.y + snakeState.cellSize - eyeOffset - eyeSize,
+                        eyeSize,
+                        eyeSize
+                    );
+                    ctx.fillRect(
+                        segment.x + snakeState.cellSize - eyeOffset - eyeSize,
+                        segment.y + snakeState.cellSize - eyeOffset - eyeSize,
+                        eyeSize,
+                        eyeSize
+                    );
+                } else { // Up
+                    ctx.fillRect(
+                        segment.x + eyeOffset,
+                        segment.y + eyeOffset,
+                        eyeSize,
+                        eyeSize
+                    );
+                    ctx.fillRect(
+                        segment.x + snakeState.cellSize - eyeOffset - eyeSize,
+                        segment.y + eyeOffset,
+                        eyeSize,
+                        eyeSize
+                    );
+                }
+            }
+        });
+        
+        // Draw food
+        ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--yellow');
+        ctx.beginPath();
+        ctx.arc(
+            snakeState.food.x + snakeState.cellSize / 2,
+            snakeState.food.y + snakeState.cellSize / 2,
+            snakeState.cellSize / 2 - 2,
+            0,
+            Math.PI * 2
+        );
+        ctx.fill();
+        
+        // Draw start message if game isn't running
+        if (!snakeState.gameRunning) {
+            ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--white');
+            ctx.font = '24px Montserrat';
+            ctx.textAlign = 'center';
+            ctx.fillText('Press any arrow key to start', gameCanvas.width / 2, gameCanvas.height / 2);
+        }
+    }
+
+    // ======================
+    // MAIN EVENT LISTENERS
+    // ======================
+    closeGame.addEventListener('click', closeCurrentGame);
+    restartGame.addEventListener('click', () => {
+        if (currentGame) {
+            switch(currentGame.id) {
+                case 'tictactoe':
+                    initTicTacToe();
+                    break;
+                case 'pong':
+                    initPong();
+                    break;
+                case 'snake':
+                    initSnake();
+                    break;
+            }
+        }
+    });
+    
+    window.addEventListener('resize', resizeCanvas);
+    
+    // Initialize the games grid
+    initializeGamesGrid();
+    console.log("debug")
+});
+    </script>
+</body>
+</html>
